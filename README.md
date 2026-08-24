@@ -21,8 +21,25 @@ výchozí je aktuální working directory.
 
 | Příkaz | Popis |
 | --- | --- |
-| `/anonymizer` | nápověda + přehled aktuálního allowlistu |
+| `/anonymizer` | nápověda + přehled allowlistu a stavů přepínačů |
 | `/anonymizer add <cesta>` | přidá povolený kořen pro běžící sezení (do restartu pi) |
+| `/anonymizer <přepínač> [on\|off]` | přepne funkci (bez argumentu toggluje) |
+
+## Přepínače pro testování
+
+Platí jen pro běžící sezení — po restartu pi se vrátí defaulty.
+
+| Přepínač | Default | Popis |
+| --- | --- | --- |
+| `log` | ON | notifikace o každém `read`/`bash` volání v UI |
+| `block` | ON | blokování `read` mimo allowlist (`/anonymizer block off` = agent čte všude volně) |
+| `dialog` | ON | modální dotaz při nálezu citlivých údajů (`off` = automatická anonymizace bez dotazu) |
+| `redact` | ON | samotná anonymizace obsahu. **`off` = data jdou modelu neošetřená!** Jen pro test detekce |
+
+Typické scénáře:
+- *Chci vidět, co model dostane bez ochrany:* `/anonymizer redact off` → přečti test-secret.txt → `/anonymizer redact on`
+- *Neotravuj mě dialogy, jen anonymizuj:* `/anonymizer dialog off`
+- *Chci jen sledovat, nic neměnit:* `/anonymizer block off` + `/anonymizer redact off`
 
 ## Nastavení
 

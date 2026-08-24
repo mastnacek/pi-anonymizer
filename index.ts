@@ -6,6 +6,7 @@
 //    nez se dostane do kontextu modelu.
 //
 // Spusteni: pi -e ./index.ts
+// Ovladani: /anonymizer — napoveda a prepinace pro testovani
 
 import { isAbsolute, join, resolve, sep } from "node:path";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
@@ -32,6 +33,14 @@ const isAllowedPath = (path: string): boolean => {
 	});
 };
 
+/** Prepinace pro testovani — /anonymizer <jmeno> on|off (plati do restartu pi). */
+const features = {
+	log: true, // logovat kazdy read/bash do UI
+	block: true, // blokovat read mimo allowlist
+	dialog: true, // modalni dialog pri nalezu citlivych udaju (off = automaticka anonymizace)
+	redact: true, // anonymizace obsahu (off = data jdou modelu nezredigovana!)
+};
+
 const REDACTED = "[REDACTED]";
 
 export const anonymizeText = (text: string): string =>
@@ -52,10 +61,13 @@ export default function (pi: ExtensionAPI) {
 	pi.on("tool_call", async (event, ctx) => {
 		if (isToolCallEventType("read", event)) {
 			const path = String(event.input.path ?? "");
-			ctx.ui.notify(`[anonymizer] read -> ${path}`, "info");
+			if (features.log)
+				ctx.ui.notify(`[anonymizer] read -> ${path}`, "info");
 
+			if (!features.block) return;
 			if (!isAllowedPath(path)) {
-				ctx.ui.notify(`[anonymizer] BLOCKED (mimo allowlist): ${path}`, "warning");
+				if (features.log)
+					ctx.ui.notify(`[anonymizer] BLOCKED (mimo allowlist): ${path}`, "warning");
 				return {
 					block: true,
 					reason: `pi-anonymizer: cesta "${path}" neni na allowlistu (${allowedRoots.join("; ")})`,
@@ -66,7 +78,7 @@ export default function (pi: ExtensionAPI) {
 
 		// bash jen logujeme — obsah stejne projde anonymizaci v tool_result,
 		// blokovani by delalo false positive u legitimnich prikazu (grep/head nad cizimi cestami)
-		if (isToolCallEventType("bash", event)) {
+		if (features.log && isToolCallEventType("bash", event)) {
 			ctx.ui.notify(
 				`[anonymizer] bash -> ${String(event.input.command ?? "").slice(0, 80)}`,
 				"info",
@@ -78,11 +90,12 @@ export default function (pi: ExtensionAPI) {
 	pi.on("tool_result", async (event, ctx) => {
 		if (event.isError) return;
 		if (event.toolName !== "read" && event.toolName !== "bash") return;
+		if (!features.redact && !features.dialog) return;
 
 		let changed = false;
 		const content = event.content.map((item) => {
 			if (item.type !== "text") return item;
-			const redacted = anonymizeText(item.text);
+			const redacted = features.redact ? anonymizeText(item.text) : item.text;
 			if (redacted !== item.text) changed = true;
 			return { ...item, text: redacted };
 		});
@@ -90,7 +103,7 @@ export default function (pi: ExtensionAPI) {
 		if (!changed) return { content };
 
 		// V TUI se zeptame uzivatele, co s nalezem; v print mode anonymizujeme automaticky.
-		if (ctx.hasUI) {
+		if (ctx.hasUI && features.dialog) {
 			const choice = await ctx.ui.select(
 				"⚠ pi-anonymizer: nalezeny citlive udaje",
 				[
@@ -128,17 +141,18 @@ export default function (pi: ExtensionAPI) {
 			}
 		}
 
-		ctx.ui.notify(
-			`[anonymizer] obsah z "${event.toolName}" anonymizovan`,
-			"warning",
-		);
+		if (features.log)
+			ctx.ui.notify(
+				`[anonymizer] obsah z "${event.toolName}" anonymizovan`,
+				"warning",
+			);
 		return { content };
 	});
 
-	// 3) /anonymizer — napoveda + nastaveni allowlistu pro bezici sezeni
+	// 3) /anonymizer — napoveda, allowlist a prepinace pro bezici sezeni
 	pi.registerCommand("anonymizer", {
 		description:
-			"pi-anonymizer: napoveda, stav allowlistu, pridani povolene cesty",
+			"pi-anonymizer: napoveda, allowlist, prepinace log/block/dialog/redact",
 		handler: async (args, ctx) => {
 			const [sub, ...rest] = args.trim().split(/\s+/).filter(Boolean);
 
@@ -149,13 +163,33 @@ export default function (pi: ExtensionAPI) {
 				return;
 			}
 
+			// /anonymizer <log|block|dialog|redact> [on|off]
+			if (sub && sub in features) {
+				const key = sub as keyof typeof features;
+				const val = rest[0]?.toLowerCase();
+				features[key] =
+					val === "on" ? true : val === "off" ? false : !features[key];
+				ctx.ui.notify(
+					`[anonymizer] ${key} = ${features[key] ? "ON" : "OFF"}`,
+					"info",
+				);
+				return;
+			}
+
 			// help / stav — jedna notifikace, protoze notify prepisuje predchozi zpravu
 			ctx.ui.notify(
 				[
 					"pi-anonymizer — anonymizuje hesla/klice/tokeny, nez se obsah dostane do kontextu modelu; blokuje read mimo allowlist",
 					"",
-					"/anonymizer             — tato napoveda",
+					"/anonymizer             — tato napoveda + stav",
 					"/anonymizer add <cesta> — prida povoleny koren (plati do konce sezeni)",
+					"/anonymizer <prepinac> [on|off] — prepne (bez argumentu toggle)",
+					"",
+					`Prepinace: log=${features.log ? "ON" : "OFF"} block=${features.block ? "ON" : "OFF"} dialog=${features.dialog ? "ON" : "OFF"} redact=${features.redact ? "ON" : "OFF"}`,
+					"  log    — notifikace o kazdem read/bash",
+					"  block  — blokovani read mimo allowlist",
+					"  dialog — dotaz pri nalezu citlivych udaju (OFF = automaticka anonymizace)",
+					"  redact — anonymizace obsahu (OFF POZOR: data jdou modelu nestredena!)",
 					"",
 					`Allowlist (${allowedRoots.length}): ${allowedRoots.join(";")}`,
 					'Trvalé nastaveni: env PI_ANONYMIZER_ALLOW="cesta1;cesta2"',
