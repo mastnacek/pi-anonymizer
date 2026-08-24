@@ -17,6 +17,21 @@ Extension používá dva háčky pi architektury:
 Allowlist se řídí env proměnnou `PI_ANONYMIZER_ALLOW` (cesty oddělené `;`),
 výchozí je aktuální working directory.
 
+## Příkazy v pi
+
+| Příkaz | Popis |
+|---|---|
+| `/anonymizer` | nápověda + přehled aktuálního allowlistu |
+| `/anonymizer add <cesta>` | přidá povolený kořen pro běžící sezení (do restartu pi) |
+
+## Nastavení
+
+- **`PI_ANONYMIZER_ALLOW`** — stálý allowlist, cesty oddělené `;`
+  (např. `PI_ANONYMIZER_ALLOW="D:\projekty;C:\Users\me\docs"`).
+  Bez nastavení je povolena jen aktuální working directory.
+- Vše ostatní (regexy, chování dialogu) je zatím pevně v kódu — konfigurační
+  soubor přibude, až bude reálně potřeba.
+
 ## Instalace
 
 ```bash

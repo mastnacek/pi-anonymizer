@@ -13,20 +13,18 @@ import { isToolCallEventType } from "@earendil-works/pi-coding-agent";
 
 // --- konfigurace -----------------------------------------------------------
 
-/** Povolene korenove adresare pro cteni. Oddelovac ";" kvuli Windows cestam. */
-const allowedRoots = (): string[] => {
-	const raw = process.env.PI_ANONYMIZER_ALLOW ?? process.cwd();
-	return raw
-		.split(";")
-		.map((p) => p.trim())
-		.filter(Boolean);
-};
+/** Povolene korenove adresare pro cteni. Oddelovac ";" kvuli Windows cestam.
+ *  Mutabilni — /anonymizer add <cesta> prida dalsi koren pro toto sezeni. */
+const allowedRoots: string[] = (process.env.PI_ANONYMIZER_ALLOW ?? process.cwd())
+	.split(";")
+	.map((p) => p.trim())
+	.filter(Boolean);
 
 const isAllowedPath = (path: string): boolean => {
 	const abs = isAbsolute(path)
 		? resolve(path)
 		: resolve(join(process.cwd(), path));
-	return allowedRoots().some((root) => {
+	return allowedRoots.some((root) => {
 		const r = resolve(root);
 		return abs === r || abs.startsWith(r + sep);
 	});
@@ -58,7 +56,7 @@ export default function (pi: ExtensionAPI) {
 				ctx.ui.notify(`[anonymizer] BLOCKED (mimo allowlist): ${path}`, "warning");
 				return {
 					block: true,
-					reason: `pi-anonymizer: cesta "${path}" neni na allowlistu (${allowedRoots().join("; ")})`,
+					reason: `pi-anonymizer: cesta "${path}" neni na allowlistu (${allowedRoots.join("; ")})`,
 				};
 			}
 			return;
@@ -72,14 +70,19 @@ export default function (pi: ExtensionAPI) {
 
 			// ponytail: heuristika tokenizace mezerou — cesty s mezerami chytit neumi,
 			// upgrade az kdyz nastane v praxi
-			const isDump = /\b(cat|type|head|tail|less|more|get-content|gc)\b/i.test(command);
+			const isDump = /\b(cat|type|head|tail|less|more|get-content|gc)\b/i.test(
+				command,
+			);
 			const looksLikePath = /(?:[A-Za-z]:)?[\\/]/;
 			const outside = command
 				.split(/\s+/)
 				.filter((t) => t.length > 2 && looksLikePath.test(t))
 				.filter((t) => !isAllowedPath(t.replace(/^["']|["'],?$/g, "")));
 			if (isDump && outside.length > 0) {
-				ctx.ui.notify(`[anonymizer] BLOCKED bash dump mimo allowlist: ${outside.join(", ")}`, "warning");
+				ctx.ui.notify(
+					`[anonymizer] BLOCKED bash dump mimo allowlist: ${outside.join(", ")}`,
+					"warning",
+				);
 				return {
 					block: true,
 					reason: `pi-anonymizer: prikaz cte soubory mimo allowlist (${outside.join(", ")}). Pozadej uzivatele o povoleni nebo pouzi soubory v pracovnim adresari.`,
@@ -147,5 +150,40 @@ export default function (pi: ExtensionAPI) {
 			"warning",
 		);
 		return { content };
+	});
+
+	// 3) /anonymizer — napoveda + nastaveni allowlistu pro bezici sezeni
+	pi.registerCommand("anonymizer", {
+		description:
+			"pi-anonymizer: napoveda, stav allowlistu, pridani povolene cesty",
+		handler: async (args, ctx) => {
+			const [sub, ...rest] = args.trim().split(/\s+/).filter(Boolean);
+
+			if (sub === "add" && rest.length > 0) {
+				const p = resolve(rest.join(" "));
+				if (!allowedRoots.includes(p)) allowedRoots.push(p);
+				ctx.ui.notify(`[anonymizer] pridan povoleny koren: ${p}`, "info");
+				return;
+			}
+
+			// help / stav
+			ctx.ui.notify(
+				"pi-anonymizer — anonymizuje hesla/klice/tokeny, nez se obsah souboru dostane do kontextu modelu; blokuje cteni mimo allowlist",
+				"info",
+			);
+			ctx.ui.notify("/anonymizer             — tato napoveda", "info");
+			ctx.ui.notify(
+				"/anonymizer add <cesta> — prida povoleny koren (platí do konce sezeni)",
+				"info",
+			);
+			ctx.ui.notify(
+				`Allowlist (${allowedRoots.length}): ${allowedRoots.join(";")}`,
+				"info",
+			);
+			ctx.ui.notify(
+				'Trvalé nastaveni: env PI_ANONYMIZER_ALLOW="cesta1;cesta2"',
+				"info",
+			);
+		},
 	});
 }
