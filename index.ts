@@ -15,13 +15,17 @@ import { isToolCallEventType } from "@earendil-works/pi-coding-agent";
 
 /** Povolene korenove adresare pro cteni. Oddelovac ";" kvuli Windows cestam. */
 const allowedRoots = (): string[] => {
-	const raw =
-		process.env.PI_ANONYMIZER_ALLOW ?? process.cwd();
-	return raw.split(";").map((p) => p.trim()).filter(Boolean);
+	const raw = process.env.PI_ANONYMIZER_ALLOW ?? process.cwd();
+	return raw
+		.split(";")
+		.map((p) => p.trim())
+		.filter(Boolean);
 };
 
 const isAllowedPath = (path: string): boolean => {
-	const abs = isAbsolute(path) ? resolve(path) : resolve(join(process.cwd(), path));
+	const abs = isAbsolute(path)
+		? resolve(path)
+		: resolve(join(process.cwd(), path));
 	return allowedRoots().some((root) => {
 		const r = resolve(root);
 		return abs === r || abs.startsWith(r + sep);
@@ -61,7 +65,10 @@ export default function (pi: ExtensionAPI) {
 
 		// bash zatim jen logujeme — je dalsi kandidat na anonymizaci/blokaci
 		if (isToolCallEventType("bash", event)) {
-			ctx.ui.notify(`[anonymizer] bash -> ${event.input.command?.slice(0, 80) ?? ""}`, "info");
+			ctx.ui.notify(
+				`[anonymizer] bash -> ${event.input.command?.slice(0, 80) ?? ""}`,
+				"info",
+			);
 		}
 	});
 
@@ -78,7 +85,39 @@ export default function (pi: ExtensionAPI) {
 			return { ...item, text: redacted };
 		});
 
-		if (changed) ctx.ui.notify(`[anonymizer] obsah z "${event.toolName}" anonymizovan`, "warning");
+		if (!changed) return { content };
+
+		// V TUI se zeptame uzivatele, co s nalezem; v print mode anonymizujeme automaticky.
+		if (ctx.hasUI) {
+			const choice = await ctx.ui.select(
+				"⚠ pi-anonymizer: nalezeny citlive udaje",
+				[
+					`Anonymizovat (default)`,
+					"Bloknout — model obsah neuvidi vubec",
+					"Pustit beze zmeny",
+				],
+			);
+			if (choice?.startsWith("Bloknout")) {
+				ctx.ui.notify(`[anonymizer] cteni zablokovano po nalezu citlivych udaju`, "warning");
+				return {
+					content: [{ type: "text", text: "[pi-anonymizer] Obsah zablokovan — byl v nem detekovan citlivy udaj." }],
+					isError: true,
+				};
+			}
+			if (choice === null) {
+				// dialog zrusen (Esc) -> bezpecna default akce
+				return { content };
+			}
+			if (choice?.startsWith("Pustit")) {
+				ctx.ui.notify("[anonymizer] obsazeni pusten BEZE ZMEN na uzivatelovo zadost", "warning");
+				return;
+			}
+		}
+
+		ctx.ui.notify(
+			`[anonymizer] obsah z "${event.toolName}" anonymizovan`,
+			"warning",
+		);
 		return { content };
 	});
 }
