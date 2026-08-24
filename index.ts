@@ -9,7 +9,10 @@
 // Ovladani: /anonymizer — napoveda a prepinace pro testovani
 
 import { isAbsolute, join, resolve, sep } from "node:path";
-import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import type {
+	ExtensionAPI,
+	ExtensionContext,
+} from "@earendil-works/pi-coding-agent";
 import { isToolCallEventType } from "@earendil-works/pi-coding-agent";
 
 // --- konfigurace -----------------------------------------------------------
@@ -112,7 +115,40 @@ const refreshStatus = (ctx: ExtensionContext) => {
 };
 
 export default function (pi: ExtensionAPI) {
+	// Perzistence nastaveni do session logu (prezije /reload, /resume, restart
+	// se stejnym session souborem) — vzor eldritch-footer.
+	const CONFIG_ENTRY_TYPE = "pi-anonymizer-config";
+
+	const saveState = () => {
+		pi.appendEntry(CONFIG_ENTRY_TYPE, {
+			features: { ...features },
+			aiModel: settings.aiModel,
+			aiUrl: settings.aiUrl,
+		});
+	};
+
+	const restoreState = (ctx: ExtensionContext) => {
+		let latest:
+			| { features?: Partial<typeof features>; aiModel?: string; aiUrl?: string }
+			| undefined;
+		for (const entry of ctx.sessionManager.getEntries()) {
+			if (
+				entry.type === "custom" &&
+				(entry as { customType?: string }).customType === CONFIG_ENTRY_TYPE &&
+				entry.data &&
+				typeof entry.data === "object"
+			) {
+				latest = entry.data as typeof latest;
+			}
+		}
+		if (!latest) return;
+		if (latest.features) Object.assign(features, latest.features);
+		if (latest.aiModel !== undefined) settings.aiModel = latest.aiModel;
+		if (latest.aiUrl !== undefined) settings.aiUrl = latest.aiUrl;
+	};
+
 	pi.on("session_start", async (_event, ctx) => {
+		restoreState(ctx);
 		refreshStatus(ctx);
 	});
 
@@ -243,6 +279,7 @@ export default function (pi: ExtensionAPI) {
 				if (!allowedRoots.includes(p)) allowedRoots.push(p);
 				ctx.ui.notify(`[anonymizer] pridan povoleny koren: ${p}`, "info");
 				refreshStatus(ctx);
+				saveState();
 				return;
 			}
 
@@ -255,6 +292,7 @@ export default function (pi: ExtensionAPI) {
 					"info",
 				);
 				refreshStatus(ctx);
+				saveState();
 				return;
 			}
 
@@ -263,6 +301,7 @@ export default function (pi: ExtensionAPI) {
 				settings.aiUrl = rest[0] ?? settings.aiUrl;
 				ctx.ui.notify(`[anonymizer] aiUrl = ${settings.aiUrl}`, "info");
 				refreshStatus(ctx);
+				saveState();
 				return;
 			}
 
@@ -300,6 +339,7 @@ export default function (pi: ExtensionAPI) {
 					"info",
 				);
 				refreshStatus(ctx);
+				saveState();
 				return;
 			}
 
