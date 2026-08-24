@@ -1,0 +1,28 @@
+{
+  "name": "pi-anonymizer",
+  "version": "0.0.1",
+  "description": "Pi extension that detects file reads, enforces a read allowlist, and anonymizes sensitive content (usernames/passwords/keys) before it reaches the model context.",
+  "type": "module",
+  "license": "MIT",
+  "keywords": [
+    "pi-package",
+    "pi",
+    "anonymizer",
+    "security"
+  ],
+  "scripts": {
+    "check": "tsc --noEmit"
+  },
+  "pi": {
+    "extensions": [
+      "./index.ts"
+    ]
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "*"
+  },
+  "devDependencies": {
+    "@earendil-works/pi-coding-agent": "0.79.10",
+    "typescript": "^5.8.3"
+  }
+}
