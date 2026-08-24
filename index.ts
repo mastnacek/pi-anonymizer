@@ -268,9 +268,36 @@ export default function (pi: ExtensionAPI) {
 	});
 
 	// 3) /anonymizer — napoveda, allowlist a prepinace pro bezici sezeni
+	const TOGGLES = Object.keys(features); // log, block, dialog, redact, localai
+
 	pi.registerCommand("anonymizer", {
 		description:
 			"pi-anonymizer: napoveda, allowlist, prepinace log/block/dialog/redact",
+		// Lazy autocomplete: pri psani /anonymizer <prefix> navrhne podprikazy,
+		// u prepinacu pak i on/off.
+		getArgumentCompletions: (prefix: string) => {
+			const tokens = prefix.split(/\s+/).filter(Boolean);
+			const trailingSpace = /\s$/.test(prefix);
+
+			// druhe slovo — jen u prepinacu nabizime on/off
+			if (tokens.length > 1 || (trailingSpace && tokens.length === 1)) {
+				const cmd = tokens[0];
+				if (!TOGGLES.includes(cmd)) return null; // add/aimodel/aiurl = volny text
+				const arg = tokens.length > 1 ? tokens[1] : "";
+				const items = ["on", "off"]
+					.filter((v) => v.startsWith(arg.toLowerCase()))
+					.map((v) => ({ value: v, label: `${cmd} ${v}` }));
+				return items.length > 0 ? items : null;
+			}
+
+			// prvni slovo — podprikazy
+			const typed = tokens[0] ?? "";
+			const subs = [...TOGGLES, "add", "aimodel", "aiurl", "models"];
+			const items = subs
+				.filter((s) => s.startsWith(typed.toLowerCase()))
+				.map((s) => ({ value: s, label: s }));
+			return items.length > 0 ? items : null;
+		},
 		handler: async (args, ctx) => {
 			const [sub, ...rest] = args.trim().split(/\s+/).filter(Boolean);
 
