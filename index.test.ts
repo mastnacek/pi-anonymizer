@@ -15,7 +15,7 @@ const REDACTED = "[REDACTED]";
 
 // --- regexova vrstva -------------------------------------------------------
 
-test("regex: rediguje password = \"...\"", () => {
+test('regex: rediguje password = "..."', () => {
 	assert.equal(
 		anonymizeText('password = "SuperTajneHeslo123"'),
 		`password = "${REDACTED}"`,
@@ -100,9 +100,13 @@ beforeEach(() => {
 test("local-ai: vrati sanitizovany text z uspesne odpovedi", async () => {
 	features.localai = true;
 	settings.aiModel = "test-model";
-	await withMockFetch(async () => jsonResponse({ choices: [{ message: { content: "clean text" } }] }), async () => {
-		assert.equal(await anonymizeWithLocalAI("secret text"), "clean text");
-	});
+	await withMockFetch(
+		async () =>
+			jsonResponse({ choices: [{ message: { content: "clean text" } }] }),
+		async () => {
+			assert.equal(await anonymizeWithLocalAI("secret text"), "clean text");
+		},
+	);
 });
 
 test("local-ai: posila spravny endpoint, model a system prompt", async () => {
@@ -110,60 +114,75 @@ test("local-ai: posila spravny endpoint, model a system prompt", async () => {
 	settings.aiModel = "ornith-9b";
 	let capturedUrl = "";
 	let capturedBody = "";
-	await withMockFetch(async (input, init) => {
-		capturedUrl = String(input);
-		capturedBody = String(init?.body ?? "");
-		return jsonResponse({ choices: [{ message: { content: "x" } }] });
-	}, async () => {
-		await anonymizeWithLocalAI("user content here");
-		assert.equal(capturedUrl, "http://localhost:11434/v1/chat/completions");
-		const body = JSON.parse(capturedBody) as {
-			model: string;
-			messages: Array<{ role: string }>;
-		};
-		assert.equal(body.model, "ornith-9b");
-		assert.deepEqual(
-			body.messages.map((m) => m.role),
-			["system", "user"],
-		);
-	});
+	await withMockFetch(
+		async (input, init) => {
+			capturedUrl = String(input);
+			capturedBody = String(init?.body ?? "");
+			return jsonResponse({ choices: [{ message: { content: "x" } }] });
+		},
+		async () => {
+			await anonymizeWithLocalAI("user content here");
+			assert.equal(capturedUrl, "http://localhost:11434/v1/chat/completions");
+			const body = JSON.parse(capturedBody) as {
+				model: string;
+				messages: Array<{ role: string }>;
+			};
+			assert.equal(body.model, "ornith-9b");
+			assert.deepEqual(
+				body.messages.map((m) => m.role),
+				["system", "user"],
+			);
+		},
+	);
 });
 
 test("local-ai: vrati null pri HTTP chybe serveru", async () => {
 	features.localai = true;
 	settings.aiModel = "test-model";
-	await withMockFetch(async () => new Response("boom", { status: 500 }), async () => {
-		assert.equal(await anonymizeWithLocalAI("text"), null);
-	});
+	await withMockFetch(
+		async () => new Response("boom", { status: 500 }),
+		async () => {
+			assert.equal(await anonymizeWithLocalAI("text"), null);
+		},
+	);
 });
 
 test("local-ai: vrati null kdyz server nereaguje", async () => {
 	features.localai = true;
 	settings.aiModel = "test-model";
-	await withMockFetch(async () => {
-		throw new Error("ECONNREFUSED");
-	}, async () => {
-		assert.equal(await anonymizeWithLocalAI("text"), null);
-	});
+	await withMockFetch(
+		async () => {
+			throw new Error("ECONNREFUSED");
+		},
+		async () => {
+			assert.equal(await anonymizeWithLocalAI("text"), null);
+		},
+	);
 });
 
 test("local-ai: vrati null pri neocekavanem formatu odpovedi", async () => {
 	features.localai = true;
 	settings.aiModel = "test-model";
-	await withMockFetch(async () => jsonResponse({ weird: true }), async () => {
-		assert.equal(await anonymizeWithLocalAI("text"), null);
-	});
+	await withMockFetch(
+		async () => jsonResponse({ weird: true }),
+		async () => {
+			assert.equal(await anonymizeWithLocalAI("text"), null);
+		},
+	);
 });
 
 test("local-ai: bez nastaveneho modelu volani neprobehne", async () => {
 	features.localai = true;
 	let called = false;
-	await withMockFetch(async () => {
-		called = true;
-		return jsonResponse({ choices: [] });
-	}, async () => {
-		assert.equal(await anonymizeWithLocalAI("text"), null);
-	});
+	await withMockFetch(
+		async () => {
+			called = true;
+			return jsonResponse({ choices: [] });
+		},
+		async () => {
+			assert.equal(await anonymizeWithLocalAI("text"), null);
+		},
+	);
 	assert.equal(called, false);
 });
 
@@ -171,11 +190,14 @@ test("local-ai: pri vypnutem prepinaci se nevola ani s nastavenym modelem", asyn
 	settings.aiModel = "test-model";
 	features.localai = false;
 	let called = false;
-	await withMockFetch(async () => {
-		called = true;
-		return jsonResponse({ choices: [] });
-	}, async () => {
-		assert.equal(await anonymizeWithLocalAI("text"), null);
-	});
+	await withMockFetch(
+		async () => {
+			called = true;
+			return jsonResponse({ choices: [] });
+		},
+		async () => {
+			assert.equal(await anonymizeWithLocalAI("text"), null);
+		},
+	);
 	assert.equal(called, false);
 });

@@ -9,7 +9,7 @@
 // Ovladani: /anonymizer — napoveda a prepinace pro testovani
 
 import { isAbsolute, join, resolve, sep } from "node:path";
-import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { isToolCallEventType } from "@earendil-works/pi-coding-agent";
 
 // --- konfigurace -----------------------------------------------------------
@@ -101,7 +101,21 @@ export const anonymizeText = (text: string): string =>
 
 // --- extension -------------------------------------------------------------
 
+/** Krátky status pro statusline (eldritch-footer zobrazí ctx.ui.setStatus). */
+const refreshStatus = (ctx: ExtensionContext) => {
+	ctx.ui.setStatus(
+		"anonymizer",
+		`anon ${features.redact ? "R" : "·"}${features.block ? "B" : "·"}${features.dialog ? "D" : "·"} · ${
+			settings.aiModel ? `ai:${settings.aiModel}` : "ai off"
+		}`, // napr. "anon RBD · ai:ornith-9b"
+	);
+};
+
 export default function (pi: ExtensionAPI) {
+	pi.on("session_start", async (_event, ctx) => {
+		refreshStatus(ctx);
+	});
+
 	// 1) Detekce + pripadne zastaveni cteni souboru
 	pi.on("tool_call", async (event, ctx) => {
 		if (isToolCallEventType("read", event)) {
@@ -228,6 +242,7 @@ export default function (pi: ExtensionAPI) {
 				const p = resolve(rest.join(" "));
 				if (!allowedRoots.includes(p)) allowedRoots.push(p);
 				ctx.ui.notify(`[anonymizer] pridan povoleny koren: ${p}`, "info");
+				refreshStatus(ctx);
 				return;
 			}
 
@@ -239,6 +254,7 @@ export default function (pi: ExtensionAPI) {
 					`[anonymizer] aiModel = "${settings.aiModel}"${rest.length > 0 ? " (localai zapnut automaticky)" : ""}`,
 					"info",
 				);
+				refreshStatus(ctx);
 				return;
 			}
 
@@ -246,6 +262,7 @@ export default function (pi: ExtensionAPI) {
 			if (sub === "aiurl") {
 				settings.aiUrl = rest[0] ?? settings.aiUrl;
 				ctx.ui.notify(`[anonymizer] aiUrl = ${settings.aiUrl}`, "info");
+				refreshStatus(ctx);
 				return;
 			}
 
@@ -282,6 +299,7 @@ export default function (pi: ExtensionAPI) {
 					`[anonymizer] ${key} = ${features[key] ? "ON" : "OFF"}`,
 					"info",
 				);
+				refreshStatus(ctx);
 				return;
 			}
 
@@ -297,7 +315,7 @@ export default function (pi: ExtensionAPI) {
 					"/anonymizer aiurl <url>      — endpoint (default Ollama localhost:11434/v1)",
 					"/anonymizer models           — vypis modelu z lokalniho serveru",
 					"",
-					`Prepinace: log=${features.log ? "ON" : "OFF"} block=${features.block ? "ON" : "OFF"} dialog=${features.dialog ? "ON" : "OFF"} redact=${features.redact ? "ON" : "OFF"}`,
+					`Prepinace: log=${features.log ? "ON" : "OFF"} block=${features.block ? "ON" : "OFF"} dialog=${features.dialog ? "ON" : "OFF"} redact=${features.redact ? "ON" : "OFF"} localai=${features.localai ? "ON" : "OFF"}`,
 					"  log    — notifikace o kazdem read/bash",
 					"  block  — blokovani read mimo allowlist",
 					"  dialog — dotaz pri nalezu citlivych udaju (OFF = automaticka anonymizace)",
