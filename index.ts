@@ -322,10 +322,7 @@ export default function (pi: ExtensionAPI) {
 			// prvni slovo — podprikazy
 			const typed = tokens[0] ?? "";
 			const SUBS: Array<[string, string]> = [
-				[
-					"on",
-					"HLAVNI VYPINAC — zapne cely plugin a vsechny funkce najednou",
-				],
+				["on", "HLAVNI VYPINAC — zapne cely plugin a vsechny funkce najednou"],
 				[
 					"off",
 					"HLAVNI VYPINAC — vypne cely plugin (zadne blokovani, dialogy ani redakce)",
