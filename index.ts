@@ -45,6 +45,17 @@ export const features = {
 	localai: false, // druha vrstva: lokalni LLM (Ollama/LM Studio) jako dodatecna detekce
 };
 
+/** Popisy prepinacu — jediny zdroj pro autocomplete i napovedu. */
+export const TOGGLE_DOCS: Record<string, string> = {
+	log: "notifikace o kazdem read/bash volani v UI",
+	block: "zablokuje cteni souboru mimo allowlist",
+	dialog: "modalni dotaz pri nalezu citlivych udaju (OFF = automaticka anonymizace)",
+	redact:
+		"regex anonymizace hesel/klicu/tokenu (OFF POZOR: data jdou modelu neošetrena!)",
+	localai:
+		"druha vrstva pres lokalni LLM — chytne i uzivatelska jmena a emaily, ktere regexy neumi",
+};
+
 /** Nastaveni lokalniho AI serveru — OpenAI-kompatibilni API (Ollama default). */
 export const settings = {
 	aiUrl: process.env.PI_ANONYMIZER_LOCALAI_URL ?? "http://localhost:11434/v1",
@@ -272,7 +283,7 @@ export default function (pi: ExtensionAPI) {
 
 	pi.registerCommand("anonymizer", {
 		description:
-			"pi-anonymizer: napoveda, allowlist, prepinace log/block/dialog/redact",
+			"pi-anonymizer: napoveda, allowlist, prepinace log/block/dialog/redact/localai, lokalni AI",
 		// Lazy autocomplete: pri psani /anonymizer <prefix> navrhne podprikazy,
 		// u prepinacu pak i on/off.
 		getArgumentCompletions: (prefix: string) => {
@@ -289,7 +300,10 @@ export default function (pi: ExtensionAPI) {
 					.map((v) => ({
 						value: v,
 						label: `${cmd} ${v}`,
-						description: v === "on" ? "zapnout" : "vypnout",
+						description:
+							v === "on"
+								? `zapne: ${TOGGLE_DOCS[cmd] ?? cmd}`
+								: `vypne: ${TOGGLE_DOCS[cmd] ?? cmd}`,
 					}));
 				return items.length > 0 ? items : null;
 			}
@@ -297,17 +311,19 @@ export default function (pi: ExtensionAPI) {
 			// prvni slovo — podprikazy
 			const typed = tokens[0] ?? "";
 			const SUBS: Array<[string, string]> = [
-				["on", "HLAVNI VYPINAC — zapne vsechny funkce"],
-				["off", "HLAVNI VYPINAC — vypne vsechny funkce"],
-				["add", "prida povoleny koren allowlistu"],
-				["aimodel", "vyber lokalniho modelu (zapne localai)"],
-				["aiurl", "endpoint OpenAI-kompatibilniho serveru"],
-				["models", "vypise modely z lokalniho serveru"],
-				...TOGGLES.map((t) => [t, `prepinac ${t}`] as [string, string]),
+				["on", "HLAVNI VYPINAC — zapne vsech 5 funkci najednou (log, block, dialog, redact, localai)"],
+				["off", "HLAVNI VYPINAC — vypne vsechny funkce (pozor: zadna ochrana!)"],
+				["add", "prida povoleny koren adresar do allowlistu (plati do restartu pi)"],
+				["aimodel", "vyber lokalniho LLM modelu pro druhou anonymizacni vrstvu (automaticky zapne localai)"],
+				["aiurl", "adresa OpenAI-kompatibilniho serveru (Ollama, LM Studio, llama.cpp)"],
+				["models", "vypise modely nainstalovane na lokalnim serveru"],
+				...TOGGLES.map(
+					(t) => [t, TOGGLE_DOCS[t] ?? `prepinac ${t}`] as [string, string],
+				),
 			];
-			const items = SUBS
-				.filter(([s]) => s.startsWith(typed.toLowerCase()))
-				.map(([value, description]) => ({ value, label: value, description }));
+			const items = SUBS.filter(([s]) => s.startsWith(typed.toLowerCase())).map(
+				([value, description]) => ({ value, label: value, description }),
+			);
 			return items.length > 0 ? items : null;
 		},
 		handler: async (args, ctx) => {
@@ -402,26 +418,27 @@ export default function (pi: ExtensionAPI) {
 			// help / stav — jedna notifikace, protoze notify prepisuje predchozi zpravu
 			ctx.ui.notify(
 				[
-					"pi-anonymizer — anonymizuje hesla/klice/tokeny, nez se obsah dostane do kontextu modelu; blokuje read mimo allowlist",
+					"pi-anonymizer — anonymizuje hesla/klice/tokeny (regex) a uzivatele/jmena (lokalni LLM), nez se obsah dostane do kontextu modelu; blokuje read mimo allowlist",
 					"",
+					"Prikazy:",
 					"/anonymizer             — tato napoveda + stav",
-					"/anonymizer add <cesta> — prida povoleny koren (plati do konce sezeni)",
+					"/anonymizer on|off      — HLAVNI VYPINAC: vsech 5 funkci najednou",
+					"/anonymizer add <cesta> — prida povoleny koren (do restartu pi)",
 					"/anonymizer <prepinac> [on|off] — prepne (bez argumentu toggle)",
 					"/anonymizer aimodel <nazev>  — vyber lokalniho modelu (zapne localai)",
 					"/anonymizer aiurl <url>      — endpoint (default Ollama localhost:11434/v1)",
 					"/anonymizer models           — vypis modelu z lokalniho serveru",
 					"",
 					`Prepinace: log=${features.log ? "ON" : "OFF"} block=${features.block ? "ON" : "OFF"} dialog=${features.dialog ? "ON" : "OFF"} redact=${features.redact ? "ON" : "OFF"} localai=${features.localai ? "ON" : "OFF"}`,
-					"  log    — notifikace o kazdem read/bash",
-					"  block  — blokovani read mimo allowlist",
-					"  dialog — dotaz pri nalezu citlivych udaju (OFF = automaticka anonymizace)",
-					"  redact — anonymizace obsahu (OFF POZOR: data jdou modelu nestredena!)",
-					"  localai— druha vrstva pres lokalni LLM (chytne i to, co regexy neumi)",
+					...TOGGLES.map(
+						(t) => `  ${t.padEnd(7)}— ${TOGGLE_DOCS[t] ?? ""}`,
+					),
 					"",
-					`LocalAI: url=${settings.aiUrl} model=${settings.aiModel || "(nenastaven!)"}`,
+					`LocalAI: url=${settings.aiUrl} model=${settings.aiModel || "(nenastaven!)"}`, // bez modelu se local-ai vrstva nespousti
 					"",
 					`Allowlist (${allowedRoots.length}): ${allowedRoots.join(";")}`,
-					'Trvalé nastaveni: env PI_ANONYMIZER_ALLOW="cesta1;cesta2"',
+					'Trvalé nastaveni: env PI_ANONYMIZER_ALLOW="cesta1;cesta2" PI_ANONYMIZER_LOCALAI_MODEL="model"',
+					"Zmeny se ukladaji do session — preziji /reload i /resume.",
 				].join("\n"),
 				"info",
 			);
