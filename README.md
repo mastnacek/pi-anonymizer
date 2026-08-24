@@ -37,9 +37,30 @@ Platí jen pro běžící sezení — po restartu pi se vrátí defaulty.
 | `redact` | ON | samotná anonymizace obsahu. **`off` = data jdou modelu neošetřená!** Jen pro test detekce |
 
 Typické scénáře:
+
 - *Chci vidět, co model dostane bez ochrany:* `/anonymizer redact off` → přečti test-secret.txt → `/anonymizer redact on`
 - *Neotravuj mě dialogy, jen anonymizuj:* `/anonymizer dialog off`
 - *Chci jen sledovat, nic neměnit:* `/anonymizer block off` + `/anonymizer redact off`
+
+## Lokální AI jako druhá vrstva
+
+Plugin umí nad regexy spustit dodatečnou detekci pomocí **lokálního LLM**
+(OpenAI-kompatibilní API — Ollama, LM Studio, llama.cpp server). Model dostane
+text a instrukci nahradit uživatele, hesla, tokeny apod. za `[REDACTED]`.
+
+```text
+/anonymizer models            — vypíše modely z lokálního serveru
+/anonymizer aimodel ornith-9b — nastaví model a zapne localai
+/anonymizer aiurl http://localhost:1234/v1  — jiný server než Ollama (LM Studio apod.)
+/anonymizer localai off       — vrstvu vypne
+```
+
+Trvalé nastavení: `PI_ANONYMIZER_LOCALAI_URL` a `PI_ANONYMIZER_LOCALAI_MODEL`.
+Default URL je `http://localhost:11434/v1` (Ollama).
+
+Pozn.: volání LLM zpomalí každé čtení souboru (typicky sekundy) — proto je
+vrstva defaultně vypnutá a regexy zůstávají první (okamžitou) vrstvou.
+Při chybě/timeoutu (120 s) plugin pokračuje jen s regex výsledky.
 
 ## Nastavení
 
@@ -80,5 +101,4 @@ node --experimental-strip-types selfcheck.ts
 
 - pseudonymizační mapa (de-anonymizace zpět pro `edit`/`write`)
 - anonymizace bash výstupů (jen se logují)
-- lokální LLM jako druhá vrstva anonymizace
-- pokročilejší patterny (uživatelská jména apod.)
+- pokročilejší patterny (uživatelská jména apod. — částečně řeší localai vrstva)

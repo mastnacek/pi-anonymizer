@@ -39,6 +39,52 @@ const features = {
 	block: true, // blokovat read mimo allowlist
 	dialog: true, // modalni dialog pri nalezu citlivych udaju (off = automaticka anonymizace)
 	redact: true, // anonymizace obsahu (off = data jdou modelu nezredigovana!)
+	localai: false, // druha vrstva: lokalni LLM (Ollama/LM Studio) jako dodatecna detekce
+};
+
+/** Nastaveni lokalniho AI serveru — OpenAI-kompatibilni API (Ollama default). */
+const settings = {
+	aiUrl:
+		process.env.PI_ANONYMIZER_LOCALAI_URL ?? "http://localhost:11434/v1",
+	aiModel: process.env.PI_ANONYMIZER_LOCALAI_MODEL ?? "",
+};
+
+const SANITIZE_PROMPT =
+	"You sanitize source code and config text before it is sent to another AI. " +
+	"Replace every username, password, secret, token, API key, connection string, " +
+	"email address and personal name with [REDACTED]. Keep everything else exactly as is. " +
+	"Return ONLY the sanitized text, no commentary.";
+
+/** Druha anonymizacni vrstva pres lokalni LLM. Vraci null pri chybe/timeoutu. */
+export const anonymizeWithLocalAI = async (
+	text: string,
+	signal?: AbortSignal,
+): Promise<string | null> => {
+	if (!settings.aiModel || !features.localai) return null;
+	try {
+		const res = await fetch(`${settings.aiUrl}/chat/completions`, {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({
+				model: settings.aiModel,
+				messages: [
+					{ role: "system", content: SANITIZE_PROMPT },
+					{ role: "user", content: text },
+				],
+				temperature: 0,
+			}),
+			signal: signal
+				? AbortSignal.any([signal, AbortSignal.timeout(120_000)])
+				: AbortSignal.timeout(120_000),
+		});
+		if (!res.ok) return null;
+		const data = (await res.json()) as {
+			choices?: Array<{ message?: { content?: string } }>;
+		};
+		return data.choices?.[0]?.message?.content ?? null;
+	} catch {
+		return null;
+	}
 };
 
 const REDACTED = "[REDACTED]";
@@ -61,8 +107,7 @@ export default function (pi: ExtensionAPI) {
 	pi.on("tool_call", async (event, ctx) => {
 		if (isToolCallEventType("read", event)) {
 			const path = String(event.input.path ?? "");
-			if (features.log)
-				ctx.ui.notify(`[anonymizer] read -> ${path}`, "info");
+			if (features.log) ctx.ui.notify(`[anonymizer] read -> ${path}`, "info");
 
 			if (!features.block) return;
 			if (!isAllowedPath(path)) {
@@ -99,6 +144,20 @@ export default function (pi: ExtensionAPI) {
 			if (redacted !== item.text) changed = true;
 			return { ...item, text: redacted };
 		});
+
+		// druha vrstva — lokalni LLM jako dodatecna detekce nad regex-redigovanym textem
+		if (features.localai && settings.aiModel) {
+			for (const item of content) {
+				if (item.type !== "text") continue;
+				ctx.ui.setStatus("anonymizer", "local-ai scan...");
+				const ai = await anonymizeWithLocalAI(item.text, ctx.signal);
+				ctx.ui.setStatus("anonymizer", undefined);
+				if (ai && ai !== item.text) {
+					item.text = ai;
+					changed = true;
+				}
+			}
+		}
 
 		if (!changed) return { content };
 
@@ -163,6 +222,48 @@ export default function (pi: ExtensionAPI) {
 				return;
 			}
 
+			// /anonymizer aimodel <nazev> — vyber lokalniho modelu
+			if (sub === "aimodel") {
+				if (!settings.aiModel && rest.length > 0)
+					features.localai = true;
+				settings.aiModel = rest.join("-");
+				ctx.ui.notify(
+					`[anonymizer] aiModel = "${settings.aiModel}"${rest.length > 0 ? " (localai zapnut automaticky)" : ""}`,
+					"info",
+				);
+				return;
+			}
+
+			// /anonymizer aiurl <url> — endpoint OpenAI-kompatibilniho serveru
+			if (sub === "aiurl") {
+				settings.aiUrl = rest[0] ?? settings.aiUrl;
+				ctx.ui.notify(`[anonymizer] aiUrl = ${settings.aiUrl}`, "info");
+				return;
+			}
+
+			// /anonymizer models — vypis modelu z lokalniho serveru
+			if (sub === "models") {
+				try {
+					const res = await fetch(`${settings.aiUrl}/models`, {
+						signal: AbortSignal.timeout(5000),
+					});
+					const data = (await res.json()) as {
+						data?: Array<{ id?: string }>;
+					};
+					const ids = data.data?.map((m) => m.id ?? "?") ?? [];
+					ctx.ui.notify(
+						`[anonymizer] modely na ${settings.aiUrl}:\n${ids.join("\n") || "(zadne)"}\nNastaveni: /anonymizer aimodel <nazev>`,
+						"info",
+					);
+				} catch {
+					ctx.ui.notify(
+						`[anonymizer] server ${settings.aiUrl} neodpovida — bezi Ollama/LM Studio?`,
+						"warning",
+					);
+				}
+				return;
+			}
+
 			// /anonymizer <log|block|dialog|redact> [on|off]
 			if (sub && sub in features) {
 				const key = sub as keyof typeof features;
@@ -184,12 +285,18 @@ export default function (pi: ExtensionAPI) {
 					"/anonymizer             — tato napoveda + stav",
 					"/anonymizer add <cesta> — prida povoleny koren (plati do konce sezeni)",
 					"/anonymizer <prepinac> [on|off] — prepne (bez argumentu toggle)",
+				"/anonymizer aimodel <nazev>  — vyber lokalniho modelu (zapne localai)",
+				"/anonymizer aiurl <url>      — endpoint (default Ollama localhost:11434/v1)",
+				"/anonymizer models           — vypis modelu z lokalniho serveru",
 					"",
 					`Prepinace: log=${features.log ? "ON" : "OFF"} block=${features.block ? "ON" : "OFF"} dialog=${features.dialog ? "ON" : "OFF"} redact=${features.redact ? "ON" : "OFF"}`,
 					"  log    — notifikace o kazdem read/bash",
 					"  block  — blokovani read mimo allowlist",
 					"  dialog — dotaz pri nalezu citlivych udaju (OFF = automaticka anonymizace)",
 					"  redact — anonymizace obsahu (OFF POZOR: data jdou modelu nestredena!)",
+				"  localai— druha vrstva pres lokalni LLM (chytne i to, co regexy neumi)",
+				"",
+				`LocalAI: url=${settings.aiUrl} model=${settings.aiModel || "(nenastaven!)"}`,
 					"",
 					`Allowlist (${allowedRoots.length}): ${allowedRoots.join(";")}`,
 					'Trvalé nastaveni: env PI_ANONYMIZER_ALLOW="cesta1;cesta2"',
