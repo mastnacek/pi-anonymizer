@@ -44,8 +44,7 @@ const features = {
 
 /** Nastaveni lokalniho AI serveru — OpenAI-kompatibilni API (Ollama default). */
 const settings = {
-	aiUrl:
-		process.env.PI_ANONYMIZER_LOCALAI_URL ?? "http://localhost:11434/v1",
+	aiUrl: process.env.PI_ANONYMIZER_LOCALAI_URL ?? "http://localhost:11434/v1",
 	aiModel: process.env.PI_ANONYMIZER_LOCALAI_MODEL ?? "",
 };
 
@@ -149,12 +148,25 @@ export default function (pi: ExtensionAPI) {
 		if (features.localai && settings.aiModel) {
 			for (const item of content) {
 				if (item.type !== "text") continue;
-				ctx.ui.setStatus("anonymizer", "local-ai scan...");
+				ctx.ui.setStatus("anonymizer", `local-ai scan (${settings.aiModel})...`);
 				const ai = await anonymizeWithLocalAI(item.text, ctx.signal);
 				ctx.ui.setStatus("anonymizer", undefined);
-				if (ai && ai !== item.text) {
+				if (ai === null) {
+					if (features.log)
+						ctx.ui.notify(
+							`[anonymizer] local-ai volani SELHALO (model "${settings.aiModel}" na ${settings.aiUrl}) — pokracuji jen s regexy`,
+							"warning",
+						);
+				} else if (ai !== item.text) {
 					item.text = ai;
 					changed = true;
+					if (features.log)
+						ctx.ui.notify("[anonymizer] local-ai doplnil dalsi redakce", "info");
+				} else if (features.log) {
+					ctx.ui.notify(
+						"[anonymizer] local-ai probehl, nenasel nic navic",
+						"info",
+					);
 				}
 			}
 		}
@@ -224,8 +236,7 @@ export default function (pi: ExtensionAPI) {
 
 			// /anonymizer aimodel <nazev> — vyber lokalniho modelu
 			if (sub === "aimodel") {
-				if (!settings.aiModel && rest.length > 0)
-					features.localai = true;
+				if (!settings.aiModel && rest.length > 0) features.localai = true;
 				settings.aiModel = rest.join("-");
 				ctx.ui.notify(
 					`[anonymizer] aiModel = "${settings.aiModel}"${rest.length > 0 ? " (localai zapnut automaticky)" : ""}`,
@@ -285,18 +296,18 @@ export default function (pi: ExtensionAPI) {
 					"/anonymizer             — tato napoveda + stav",
 					"/anonymizer add <cesta> — prida povoleny koren (plati do konce sezeni)",
 					"/anonymizer <prepinac> [on|off] — prepne (bez argumentu toggle)",
-				"/anonymizer aimodel <nazev>  — vyber lokalniho modelu (zapne localai)",
-				"/anonymizer aiurl <url>      — endpoint (default Ollama localhost:11434/v1)",
-				"/anonymizer models           — vypis modelu z lokalniho serveru",
+					"/anonymizer aimodel <nazev>  — vyber lokalniho modelu (zapne localai)",
+					"/anonymizer aiurl <url>      — endpoint (default Ollama localhost:11434/v1)",
+					"/anonymizer models           — vypis modelu z lokalniho serveru",
 					"",
 					`Prepinace: log=${features.log ? "ON" : "OFF"} block=${features.block ? "ON" : "OFF"} dialog=${features.dialog ? "ON" : "OFF"} redact=${features.redact ? "ON" : "OFF"}`,
 					"  log    — notifikace o kazdem read/bash",
 					"  block  — blokovani read mimo allowlist",
 					"  dialog — dotaz pri nalezu citlivych udaju (OFF = automaticka anonymizace)",
 					"  redact — anonymizace obsahu (OFF POZOR: data jdou modelu nestredena!)",
-				"  localai— druha vrstva pres lokalni LLM (chytne i to, co regexy neumi)",
-				"",
-				`LocalAI: url=${settings.aiUrl} model=${settings.aiModel || "(nenastaven!)"}`,
+					"  localai— druha vrstva pres lokalni LLM (chytne i to, co regexy neumi)",
+					"",
+					`LocalAI: url=${settings.aiUrl} model=${settings.aiModel || "(nenastaven!)"}`,
 					"",
 					`Allowlist (${allowedRoots.length}): ${allowedRoots.join(";")}`,
 					'Trvalé nastaveni: env PI_ANONYMIZER_ALLOW="cesta1;cesta2"',
