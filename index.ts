@@ -286,20 +286,49 @@ export default function (pi: ExtensionAPI) {
 				const arg = tokens.length > 1 ? tokens[1] : "";
 				const items = ["on", "off"]
 					.filter((v) => v.startsWith(arg.toLowerCase()))
-					.map((v) => ({ value: v, label: `${cmd} ${v}` }));
+					.map((v) => ({
+						value: v,
+						label: `${cmd} ${v}`,
+						description: v === "on" ? "zapnout" : "vypnout",
+					}));
 				return items.length > 0 ? items : null;
 			}
 
 			// prvni slovo — podprikazy
 			const typed = tokens[0] ?? "";
-			const subs = [...TOGGLES, "add", "aimodel", "aiurl", "models"];
-			const items = subs
-				.filter((s) => s.startsWith(typed.toLowerCase()))
-				.map((s) => ({ value: s, label: s }));
+			const SUBS: Array<[string, string]> = [
+				["on", "HLAVNI VYPINAC — zapne vsechny funkce"],
+				["off", "HLAVNI VYPINAC — vypne vsechny funkce"],
+				["add", "prida povoleny koren allowlistu"],
+				["aimodel", "vyber lokalniho modelu (zapne localai)"],
+				["aiurl", "endpoint OpenAI-kompatibilniho serveru"],
+				["models", "vypise modely z lokalniho serveru"],
+				...TOGGLES.map((t) => [t, `prepinac ${t}`] as [string, string]),
+			];
+			const items = SUBS
+				.filter(([s]) => s.startsWith(typed.toLowerCase()))
+				.map(([value, description]) => ({ value, label: value, description }));
 			return items.length > 0 ? items : null;
 		},
 		handler: async (args, ctx) => {
 			const [sub, ...rest] = args.trim().split(/\s+/).filter(Boolean);
+
+			// /anonymizer on|off — hlavni vypinac vsech funkci najednou
+			if ((sub === "on" || sub === "off") && rest.length === 0) {
+				const val = sub === "on";
+				features.log = val;
+				features.block = val;
+				features.dialog = val;
+				features.redact = val;
+				features.localai = val;
+				ctx.ui.notify(
+					`[anonymizer] vsechny funkce ${val ? "ZAPNUTY" : "VYPNUTY"}`,
+					val ? "info" : "warning",
+				);
+				refreshStatus(ctx);
+				saveState();
+				return;
+			}
 
 			if (sub === "add" && rest.length > 0) {
 				const p = resolve(rest.join(" "));
