@@ -8,6 +8,9 @@ const cases: Array<[string, boolean]> = [
 	["API_KEY='sk-12345678'", true],
 	["token: eyJhbGciOiJIUzI1NiJ9.xxx", true],
 	["hex 0123456789abcdef0123456789abcdef", true],
+	// leaky z prvniho testu — podtrzitkove prefixy
+	['database_password = "SuperTajneHeslo123"', true],
+	["auth_token: 'eyJhbGciOiJIUzI1NiJ9.test.sig'", true],
 	["username = jan.novak", false], // zamerne jeste nechytame (jen demo sada)
 ];
 

@@ -37,8 +37,9 @@ const REDACTED = "[REDACTED]";
 export const anonymizeText = (text: string): string =>
 	text
 		// klicova slova typu heslo/token/klic nasledovana dvojteckou nebo rovnitkem
+		// (?<![a-zA-Z0-9]) misto \b — aby chytilo i database_password, auth_token apod. (podtrzitko neni hranice slova)
 		.replace(
-			/\b(pass(word|wd)?|pwd|secret|token|api[-_]?key|auth)\b(\s*[:=]\s*)("[^"\n]{4,}"|'[^'\n]{4,}'|[A-Za-z0-9_\-./+]{8,})/gi,
+			/(?<![a-zA-Z0-9])(pass(word|wd)?|pwd|secret|token|api[-_]?key|auth)(\s*[:=]\s*)("[^"\n]{4,}"|'[^'\n]{4,}'|[A-Za-z0-9_\-./+]{8,})/gi,
 			(_m, keyword, _inner, sep) => `${keyword}${sep}"${REDACTED}"`,
 		)
 		// dlouhe hexadecimalni retezce (typicky klice)
@@ -63,12 +64,27 @@ export default function (pi: ExtensionAPI) {
 			return;
 		}
 
-		// bash zatim jen logujeme — je dalsi kandidat na anonymizaci/blokaci
+		// bash: zablokuj dump-prikazy ctecici soubory mimo allowlist
+		// (jinak agent obchazi blokaci read pres `cat ...`)
 		if (isToolCallEventType("bash", event)) {
-			ctx.ui.notify(
-				`[anonymizer] bash -> ${event.input.command?.slice(0, 80) ?? ""}`,
-				"info",
-			);
+			const command = String(event.input.command ?? "");
+			ctx.ui.notify(`[anonymizer] bash -> ${command.slice(0, 80)}`, "info");
+
+			// ponytail: heuristika tokenizace mezerou — cesty s mezerami chytit neumi,
+			// upgrade az kdyz nastane v praxi
+			const isDump = /\b(cat|type|head|tail|less|more|get-content|gc)\b/i.test(command);
+			const looksLikePath = /(?:[A-Za-z]:)?[\\/]/;
+			const outside = command
+				.split(/\s+/)
+				.filter((t) => t.length > 2 && looksLikePath.test(t))
+				.filter((t) => !isAllowedPath(t.replace(/^["']|["'],?$/g, "")));
+			if (isDump && outside.length > 0) {
+				ctx.ui.notify(`[anonymizer] BLOCKED bash dump mimo allowlist: ${outside.join(", ")}`, "warning");
+				return {
+					block: true,
+					reason: `pi-anonymizer: prikaz cte soubory mimo allowlist (${outside.join(", ")}). Pozadej uzivatele o povoleni nebo pouzi soubory v pracovnim adresari.`,
+				};
+			}
 		}
 	});
 
@@ -98,9 +114,18 @@ export default function (pi: ExtensionAPI) {
 				],
 			);
 			if (choice?.startsWith("Bloknout")) {
-				ctx.ui.notify(`[anonymizer] cteni zablokovano po nalezu citlivych udaju`, "warning");
+				ctx.ui.notify(
+					`[anonymizer] cteni zablokovano po nalezu citlivych udaju`,
+					"warning",
+				);
 				return {
-					content: [{ type: "text", text: "[pi-anonymizer] Obsah zablokovan — byl v nem detekovan citlivy udaj." }],
+					content: [
+						{
+							type: "text",
+							text:
+								"[pi-anonymizer] Obsah zablokovan — byl v nem detekovan citlivy udaj.",
+						},
+					],
 					isError: true,
 				};
 			}
@@ -109,7 +134,10 @@ export default function (pi: ExtensionAPI) {
 				return { content };
 			}
 			if (choice?.startsWith("Pustit")) {
-				ctx.ui.notify("[anonymizer] obsazeni pusten BEZE ZMEN na uzivatelovo zadost", "warning");
+				ctx.ui.notify(
+					"[anonymizer] obsazeni pusten BEZE ZMEN na uzivatelovo zadost",
+					"warning",
+				);
 				return;
 			}
 		}
