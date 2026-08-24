@@ -91,11 +91,14 @@ Poté v pi:
 3. **Logování**: každý `read` i `bash` call se objeví jako
    `[anonymizer] read -> <cesta>` notifikace.
 
-## Self-check regexů
+## Testy
 
 ```bash
-node --experimental-strip-types selfcheck.ts
+npm test        # 15 testu: regexova vrstva + lokalni AI vrstva (mock fetch)
+npm run check   # typova kontrola
 ```
+
+Testy pouzivaji vestaveny node:test runner, zadne dalsi zavislosti.
 
 ## Co je zatím záměrně vynechané
 

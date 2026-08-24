@@ -17,7 +17,8 @@
     "security"
   ],
   "scripts": {
-    "check": "tsc --noEmit"
+    "check": "tsc --noEmit",
+    "test": "node --test --experimental-strip-types index.test.ts"
   },
   "pi": {
     "extensions": [

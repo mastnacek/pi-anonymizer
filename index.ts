@@ -34,7 +34,7 @@ const isAllowedPath = (path: string): boolean => {
 };
 
 /** Prepinace pro testovani — /anonymizer <jmeno> on|off (plati do restartu pi). */
-const features = {
+export const features = {
 	log: true, // logovat kazdy read/bash do UI
 	block: true, // blokovat read mimo allowlist
 	dialog: true, // modalni dialog pri nalezu citlivych udaju (off = automaticka anonymizace)
@@ -43,7 +43,7 @@ const features = {
 };
 
 /** Nastaveni lokalniho AI serveru — OpenAI-kompatibilni API (Ollama default). */
-const settings = {
+export const settings = {
 	aiUrl: process.env.PI_ANONYMIZER_LOCALAI_URL ?? "http://localhost:11434/v1",
 	aiModel: process.env.PI_ANONYMIZER_LOCALAI_MODEL ?? "",
 };
@@ -163,10 +163,7 @@ export default function (pi: ExtensionAPI) {
 					if (features.log)
 						ctx.ui.notify("[anonymizer] local-ai doplnil dalsi redakce", "info");
 				} else if (features.log) {
-					ctx.ui.notify(
-						"[anonymizer] local-ai probehl, nenasel nic navic",
-						"info",
-					);
+					ctx.ui.notify("[anonymizer] local-ai probehl, nenasel nic navic", "info");
 				}
 			}
 		}
