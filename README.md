@@ -20,7 +20,7 @@ výchozí je aktuální working directory.
 ## Příkazy v pi
 
 | Příkaz | Popis |
-|---|---|
+| --- | --- |
 | `/anonymizer` | nápověda + přehled aktuálního allowlistu |
 | `/anonymizer add <cesta>` | přidá povolený kořen pro běžící sezení (do restartu pi) |
 

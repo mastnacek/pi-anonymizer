@@ -15,7 +15,9 @@ import { isToolCallEventType } from "@earendil-works/pi-coding-agent";
 
 /** Povolene korenove adresare pro cteni. Oddelovac ";" kvuli Windows cestam.
  *  Mutabilni — /anonymizer add <cesta> prida dalsi koren pro toto sezeni. */
-const allowedRoots: string[] = (process.env.PI_ANONYMIZER_ALLOW ?? process.cwd())
+const allowedRoots: string[] = (
+	process.env.PI_ANONYMIZER_ALLOW ?? process.cwd()
+)
 	.split(";")
 	.map((p) => p.trim())
 	.filter(Boolean);
@@ -62,32 +64,13 @@ export default function (pi: ExtensionAPI) {
 			return;
 		}
 
-		// bash: zablokuj dump-prikazy ctecici soubory mimo allowlist
-		// (jinak agent obchazi blokaci read pres `cat ...`)
+		// bash jen logujeme — obsah stejne projde anonymizaci v tool_result,
+		// blokovani by delalo false positive u legitimnich prikazu (grep/head nad cizimi cestami)
 		if (isToolCallEventType("bash", event)) {
-			const command = String(event.input.command ?? "");
-			ctx.ui.notify(`[anonymizer] bash -> ${command.slice(0, 80)}`, "info");
-
-			// ponytail: heuristika tokenizace mezerou — cesty s mezerami chytit neumi,
-			// upgrade az kdyz nastane v praxi
-			const isDump = /\b(cat|type|head|tail|less|more|get-content|gc)\b/i.test(
-				command,
+			ctx.ui.notify(
+				`[anonymizer] bash -> ${String(event.input.command ?? "").slice(0, 80)}`,
+				"info",
 			);
-			const looksLikePath = /(?:[A-Za-z]:)?[\\/]/;
-			const outside = command
-				.split(/\s+/)
-				.filter((t) => t.length > 2 && looksLikePath.test(t))
-				.filter((t) => !isAllowedPath(t.replace(/^["']|["'],?$/g, "")));
-			if (isDump && outside.length > 0) {
-				ctx.ui.notify(
-					`[anonymizer] BLOCKED bash dump mimo allowlist: ${outside.join(", ")}`,
-					"warning",
-				);
-				return {
-					block: true,
-					reason: `pi-anonymizer: prikaz cte soubory mimo allowlist (${outside.join(", ")}). Pozadej uzivatele o povoleni nebo pouzi soubory v pracovnim adresari.`,
-				};
-			}
 		}
 	});
 
@@ -166,22 +149,17 @@ export default function (pi: ExtensionAPI) {
 				return;
 			}
 
-			// help / stav
+			// help / stav — jedna notifikace, protoze notify prepisuje predchozi zpravu
 			ctx.ui.notify(
-				"pi-anonymizer — anonymizuje hesla/klice/tokeny, nez se obsah souboru dostane do kontextu modelu; blokuje cteni mimo allowlist",
-				"info",
-			);
-			ctx.ui.notify("/anonymizer             — tato napoveda", "info");
-			ctx.ui.notify(
-				"/anonymizer add <cesta> — prida povoleny koren (platí do konce sezeni)",
-				"info",
-			);
-			ctx.ui.notify(
-				`Allowlist (${allowedRoots.length}): ${allowedRoots.join(";")}`,
-				"info",
-			);
-			ctx.ui.notify(
-				'Trvalé nastaveni: env PI_ANONYMIZER_ALLOW="cesta1;cesta2"',
+				[
+					"pi-anonymizer — anonymizuje hesla/klice/tokeny, nez se obsah dostane do kontextu modelu; blokuje read mimo allowlist",
+					"",
+					"/anonymizer             — tato napoveda",
+					"/anonymizer add <cesta> — prida povoleny koren (plati do konce sezeni)",
+					"",
+					`Allowlist (${allowedRoots.length}): ${allowedRoots.join(";")}`,
+					'Trvalé nastaveni: env PI_ANONYMIZER_ALLOW="cesta1;cesta2"',
+				].join("\n"),
 				"info",
 			);
 		},
