@@ -8,6 +8,7 @@
 // Spusteni: pi -e ./index.ts
 // Ovladani: /anonymizer — napoveda a prepinace pro testovani
 
+import { tmpdir } from "node:os";
 import { isAbsolute, join, resolve, sep } from "node:path";
 import type {
 	ExtensionAPI,
@@ -18,9 +19,11 @@ import { isToolCallEventType } from "@earendil-works/pi-coding-agent";
 // --- konfigurace -----------------------------------------------------------
 
 /** Povolene korenove adresare pro cteni. Oddelovac ";" kvuli Windows cestam.
+ *  Implicitne cwd + tmpdir (pro clipboard obrazky a docasne soubory pi).
  *  Mutabilni — /anonymizer add <cesta> prida dalsi koren pro toto sezeni. */
+const defaultRoots = [process.cwd(), tmpdir()];
 const allowedRoots: string[] = (
-	process.env.PI_ANONYMIZER_ALLOW ?? process.cwd()
+	process.env.PI_ANONYMIZER_ALLOW ?? defaultRoots.join(";")
 )
 	.split(";")
 	.map((p) => p.trim())
@@ -38,6 +41,7 @@ const isAllowedPath = (path: string): boolean => {
 
 /** Prepinace pro testovani — /anonymizer <jmeno> on|off (plati do restartu pi). */
 export const features = {
+	enabled: true, // hlavni master switch (off = plugin zcela neaktivni)
 	log: true, // logovat kazdy read/bash do UI
 	block: true, // blokovat read mimo allowlist
 	dialog: true, // modalni dialog pri nalezu citlivych udaju (off = automaticka anonymizace)
@@ -49,7 +53,8 @@ export const features = {
 export const TOGGLE_DOCS: Record<string, string> = {
 	log: "notifikace o kazdem read/bash volani v UI",
 	block: "zablokuje cteni souboru mimo allowlist",
-	dialog: "modalni dotaz pri nalezu citlivych udaju (OFF = automaticka anonymizace)",
+	dialog:
+		"modalni dotaz pri nalezu citlivych udaju (OFF = automaticka anonymizace)",
 	redact:
 		"regex anonymizace hesel/klicu/tokenu (OFF POZOR: data jdou modelu neošetrena!)",
 	localai:
@@ -117,6 +122,10 @@ export const anonymizeText = (text: string): string =>
 
 /** Krátky status pro statusline (eldritch-footer zobrazí ctx.ui.setStatus). */
 const refreshStatus = (ctx: ExtensionContext) => {
+	if (!features.enabled) {
+		ctx.ui.setStatus("anonymizer", "anon off");
+		return;
+	}
 	ctx.ui.setStatus(
 		"anonymizer",
 		`anon ${features.redact ? "R" : "·"}${features.block ? "B" : "·"}${features.dialog ? "D" : "·"} · ${
@@ -165,6 +174,7 @@ export default function (pi: ExtensionAPI) {
 
 	// 1) Detekce + pripadne zastaveni cteni souboru
 	pi.on("tool_call", async (event, ctx) => {
+		if (!features.enabled) return;
 		if (isToolCallEventType("read", event)) {
 			const path = String(event.input.path ?? "");
 			if (features.log) ctx.ui.notify(`[anonymizer] read -> ${path}`, "info");
@@ -193,6 +203,7 @@ export default function (pi: ExtensionAPI) {
 
 	// 2) Anonymizace vysledku, nez jde do kontextu modelu
 	pi.on("tool_result", async (event, ctx) => {
+		if (!features.enabled) return;
 		if (event.isError) return;
 		if (event.toolName !== "read" && event.toolName !== "bash") return;
 		if (!features.redact && !features.dialog) return;
@@ -279,7 +290,7 @@ export default function (pi: ExtensionAPI) {
 	});
 
 	// 3) /anonymizer — napoveda, allowlist a prepinace pro bezici sezeni
-	const TOGGLES = Object.keys(features); // log, block, dialog, redact, localai
+	const TOGGLES = ["log", "block", "dialog", "redact", "localai"];
 
 	pi.registerCommand("anonymizer", {
 		description:
@@ -311,11 +322,28 @@ export default function (pi: ExtensionAPI) {
 			// prvni slovo — podprikazy
 			const typed = tokens[0] ?? "";
 			const SUBS: Array<[string, string]> = [
-				["on", "HLAVNI VYPINAC — zapne vsech 5 funkci najednou (log, block, dialog, redact, localai)"],
-				["off", "HLAVNI VYPINAC — vypne vsechny funkce (pozor: zadna ochrana!)"],
-				["add", "prida povoleny koren adresar do allowlistu (plati do restartu pi)"],
-				["aimodel", "vyber lokalniho LLM modelu pro druhou anonymizacni vrstvu (automaticky zapne localai)"],
-				["aiurl", "adresa OpenAI-kompatibilniho serveru (Ollama, LM Studio, llama.cpp)"],
+				[
+					"on",
+					"HLAVNI VYPINAC — zapne cely plugin a vsechny funkce najednou",
+				],
+				[
+					"off",
+					"HLAVNI VYPINAC — vypne cely plugin (zadne blokovani, dialogy ani redakce)",
+				],
+				["status", "zobrazi aktualni stav a napovedu pluginu"],
+				["help", "zobrazi podrobnou napovedu k prikazum"],
+				[
+					"add",
+					"prida povoleny koren adresar do allowlistu (plati do restartu pi)",
+				],
+				[
+					"aimodel",
+					"vyber lokalniho LLM modelu pro druhou anonymizacni vrstvu (automaticky zapne localai)",
+				],
+				[
+					"aiurl",
+					"adresa OpenAI-kompatibilniho serveru (Ollama, LM Studio, llama.cpp)",
+				],
 				["models", "vypise modely nainstalovane na lokalnim serveru"],
 				...TOGGLES.map(
 					(t) => [t, TOGGLE_DOCS[t] ?? `prepinac ${t}`] as [string, string],
@@ -332,13 +360,14 @@ export default function (pi: ExtensionAPI) {
 			// /anonymizer on|off — hlavni vypinac vsech funkci najednou
 			if ((sub === "on" || sub === "off") && rest.length === 0) {
 				const val = sub === "on";
+				features.enabled = val;
 				features.log = val;
 				features.block = val;
 				features.dialog = val;
 				features.redact = val;
-				features.localai = val;
+				if (!val) features.localai = false;
 				ctx.ui.notify(
-					`[anonymizer] vsechny funkce ${val ? "ZAPNUTY" : "VYPNUTY"}`,
+					`[anonymizer] plugin ${val ? "ZAPNUT (vsechny funkce aktivni)" : "VYPNUT (vsechny funkce deaktivovany)"}`,
 					val ? "info" : "warning",
 				);
 				refreshStatus(ctx);
@@ -357,7 +386,10 @@ export default function (pi: ExtensionAPI) {
 
 			// /anonymizer aimodel <nazev> — vyber lokalniho modelu
 			if (sub === "aimodel") {
-				if (!settings.aiModel && rest.length > 0) features.localai = true;
+				if (!settings.aiModel && rest.length > 0) {
+					features.enabled = true;
+					features.localai = true;
+				}
 				settings.aiModel = rest.join("-");
 				ctx.ui.notify(
 					`[anonymizer] aiModel = "${settings.aiModel}"${rest.length > 0 ? " (localai zapnut automaticky)" : ""}`,
@@ -400,14 +432,15 @@ export default function (pi: ExtensionAPI) {
 				return;
 			}
 
-			// /anonymizer <log|block|dialog|redact> [on|off]
-			if (sub && sub in features) {
-				const key = sub as keyof typeof features;
+			// /anonymizer <log|block|dialog|redact|localai> [on|off]
+			if (sub && TOGGLES.includes(sub)) {
+				const key = sub as "log" | "block" | "dialog" | "redact" | "localai";
 				const val = rest[0]?.toLowerCase();
 				features[key] =
 					val === "on" ? true : val === "off" ? false : !features[key];
+				if (features[key]) features.enabled = true;
 				ctx.ui.notify(
-					`[anonymizer] ${key} = ${features[key] ? "ON" : "OFF"}`,
+					`[anonymizer] ${key} = ${features[key] ? "ON" : "OFF"}${features.enabled ? "" : " (pozor: plugin je globalne OFF)"}`,
 					"info",
 				);
 				refreshStatus(ctx);
@@ -418,23 +451,22 @@ export default function (pi: ExtensionAPI) {
 			// help / stav — jedna notifikace, protoze notify prepisuje predchozi zpravu
 			ctx.ui.notify(
 				[
-					"pi-anonymizer — anonymizuje hesla/klice/tokeny (regex) a uzivatele/jmena (lokalni LLM), nez se obsah dostane do kontextu modelu; blokuje read mimo allowlist",
+					`pi-anonymizer — stav: ${features.enabled ? "ZAPNUTO (ON)" : "VYPNUTO (OFF)"}`,
+					"Anonymizuje hesla/klice/tokeny (regex) a uzivatele/jmena (lokalni LLM), nez se obsah dostane do kontextu modelu; blokuje read mimo allowlist.",
 					"",
 					"Prikazy:",
 					"/anonymizer             — tato napoveda + stav",
-					"/anonymizer on|off      — HLAVNI VYPINAC: vsech 5 funkci najednou",
+					"/anonymizer on|off      — HLAVNI VYPINAC: zapne/vypne cely plugin",
 					"/anonymizer add <cesta> — prida povoleny koren (do restartu pi)",
-					"/anonymizer <prepinac> [on|off] — prepne (bez argumentu toggle)",
+					"/anonymizer <prepinac> [on|off] — prepne konkretni funkci",
 					"/anonymizer aimodel <nazev>  — vyber lokalniho modelu (zapne localai)",
 					"/anonymizer aiurl <url>      — endpoint (default Ollama localhost:11434/v1)",
 					"/anonymizer models           — vypis modelu z lokalniho serveru",
 					"",
 					`Prepinace: log=${features.log ? "ON" : "OFF"} block=${features.block ? "ON" : "OFF"} dialog=${features.dialog ? "ON" : "OFF"} redact=${features.redact ? "ON" : "OFF"} localai=${features.localai ? "ON" : "OFF"}`,
-					...TOGGLES.map(
-						(t) => `  ${t.padEnd(7)}— ${TOGGLE_DOCS[t] ?? ""}`,
-					),
+					...TOGGLES.map((t) => `  ${t.padEnd(7)}— ${TOGGLE_DOCS[t] ?? ""}`),
 					"",
-					`LocalAI: url=${settings.aiUrl} model=${settings.aiModel || "(nenastaven!)"}`, // bez modelu se local-ai vrstva nespousti
+					`LocalAI: url=${settings.aiUrl} model=${settings.aiModel || "(nenastaven!)"}`,
 					"",
 					`Allowlist (${allowedRoots.length}): ${allowedRoots.join(";")}`,
 					'Trvalé nastaveni: env PI_ANONYMIZER_ALLOW="cesta1;cesta2" PI_ANONYMIZER_LOCALAI_MODEL="model"',
