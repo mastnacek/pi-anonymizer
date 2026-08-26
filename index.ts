@@ -300,27 +300,28 @@ export default function (pi: ExtensionAPI) {
 		getArgumentCompletions: (prefix: string) => {
 			const tokens = prefix.split(/\s+/).filter(Boolean);
 			const trailingSpace = /\s$/.test(prefix);
+			const normalizedPrefix = tokens.join(" ").toLowerCase();
 
 			// druhe slovo — jen u prepinacu nabizime on/off
 			if (tokens.length > 1 || (trailingSpace && tokens.length === 1)) {
-				const cmd = tokens[0];
+				const cmd = tokens[0].toLowerCase();
 				if (!TOGGLES.includes(cmd)) return null; // add/aimodel/aiurl = volny text
-				const arg = tokens.length > 1 ? tokens[1] : "";
-				const items = ["on", "off"]
-					.filter((v) => v.startsWith(arg.toLowerCase()))
-					.map((v) => ({
-						value: v,
-						label: `${cmd} ${v}`,
-						description:
-							v === "on"
-								? `zapne: ${TOGGLE_DOCS[cmd] ?? cmd}`
-								: `vypne: ${TOGGLE_DOCS[cmd] ?? cmd}`,
-					}));
-				return items.length > 0 ? items : null;
+				const items = ["on", "off"].map((v) => ({
+					value: `${cmd} ${v}`,
+					label: `${cmd} ${v}`,
+					description:
+						v === "on"
+							? `zapne: ${TOGGLE_DOCS[cmd] ?? cmd}`
+							: `vypne: ${TOGGLE_DOCS[cmd] ?? cmd}`,
+				}));
+				const filtered = items.filter((i) =>
+					i.value.toLowerCase().startsWith(normalizedPrefix),
+				);
+				return filtered.length > 0 ? filtered : null;
 			}
 
 			// prvni slovo — podprikazy
-			const typed = tokens[0] ?? "";
+			const typed = (tokens[0] ?? "").toLowerCase();
 			const SUBS: Array<[string, string]> = [
 				["on", "HLAVNI VYPINAC — zapne cely plugin a vsechny funkce najednou"],
 				[
@@ -346,13 +347,14 @@ export default function (pi: ExtensionAPI) {
 					(t) => [t, TOGGLE_DOCS[t] ?? `prepinac ${t}`] as [string, string],
 				),
 			];
-			const items = SUBS.filter(([s]) => s.startsWith(typed.toLowerCase())).map(
+			const items = SUBS.filter(([s]) => s.toLowerCase().startsWith(typed)).map(
 				([value, description]) => ({ value, label: value, description }),
 			);
 			return items.length > 0 ? items : null;
 		},
 		handler: async (args, ctx) => {
-			const [sub, ...rest] = args.trim().split(/\s+/).filter(Boolean);
+			const [subRaw, ...rest] = args.trim().split(/\s+/).filter(Boolean);
+			const sub = subRaw?.toLowerCase();
 
 			// /anonymizer on|off — hlavni vypinac vsech funkci najednou
 			if ((sub === "on" || sub === "off") && rest.length === 0) {
