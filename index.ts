@@ -302,22 +302,49 @@ export default function (pi: ExtensionAPI) {
 			const trailingSpace = /\s$/.test(prefix);
 			const normalizedPrefix = tokens.join(" ").toLowerCase();
 
-			// druhe slovo — jen u prepinacu nabizime on/off
+			// druhe slovo — kontextove doplňování parametrů
 			if (tokens.length > 1 || (trailingSpace && tokens.length === 1)) {
 				const cmd = tokens[0].toLowerCase();
-				if (!TOGGLES.includes(cmd)) return null; // add/aimodel/aiurl = volny text
-				const items = ["on", "off"].map((v) => ({
-					value: `${cmd} ${v}`,
-					label: `${cmd} ${v}`,
-					description:
-						v === "on"
-							? `zapne: ${TOGGLE_DOCS[cmd] ?? cmd}`
-							: `vypne: ${TOGGLE_DOCS[cmd] ?? cmd}`,
-				}));
-				const filtered = items.filter((i) =>
-					i.value.toLowerCase().startsWith(normalizedPrefix),
-				);
-				return filtered.length > 0 ? filtered : null;
+				if (TOGGLES.includes(cmd)) {
+					const items = ["on", "off"].map((v) => ({
+						value: `${cmd} ${v}`,
+						label: `${cmd} ${v}`,
+						description:
+							v === "on"
+								? `zapne: ${TOGGLE_DOCS[cmd] ?? cmd}`
+								: `vypne: ${TOGGLE_DOCS[cmd] ?? cmd}`,
+					}));
+					const filtered = items.filter((i) =>
+						i.value.toLowerCase().startsWith(normalizedPrefix),
+					);
+					return filtered.length > 0 ? filtered : null;
+				}
+
+				if (cmd === "aimodel") {
+					const modelCandidates = new Set<string>();
+					if (settings.aiModel) modelCandidates.add(settings.aiModel);
+					const common = [
+						"llama3.2",
+						"qwen2.5-coder",
+						"mistral",
+						"gemma2",
+						"phi4",
+						"deepseek-r1:1.5b",
+					];
+					for (const m of common) modelCandidates.add(m);
+
+					const items = Array.from(modelCandidates).map((m) => ({
+						value: `aimodel ${m}`,
+						label: `aimodel ${m}`,
+						description: `Použít lokální model ${m}`,
+					}));
+					const filtered = items.filter((i) =>
+						i.value.toLowerCase().startsWith(normalizedPrefix),
+					);
+					return filtered.length > 0 ? filtered : null;
+				}
+
+				return null;
 			}
 
 			// prvni slovo — podprikazy
