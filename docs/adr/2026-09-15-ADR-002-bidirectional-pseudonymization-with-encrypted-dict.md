@@ -1,0 +1,6 @@
+# ADR-002: Bidirectional Pseudonymization with Encrypted Dictionary and Protected Path Isolation
+- **Date:** 2026-09-15 21:33:17
+- **Status:** active
+- **Context:** Original pi-anonymizer used a slow local LLM layer (Ollama) with 120s timeout and modal select dialogs on file read, causing high latency, agent workflow interruption, and risk of code syntax corruption. Replacing secrets with static [REDACTED] strings broke file edits and writes, corrupting codebases.
+- **Decision:** Eliminated local LLM layer and modal dialogs. Implemented bidirectional pseudonymization using stable reversible tokens (__ANON_N__) that unmask dynamically on tool_call (write, edit, bash). Added dictionary support with AES-256-GCM encrypted payload or plaintext from .env. Enforced strict path isolation blocking AI agent from accessing .env*, *.pem, *.key, and ssh identity files.
+- **Consequences:** Zero network latency or timeouts during file reads. AI agent can safely refactor code containing sensitive credentials without corrupting files with static [REDACTED] markers. Agent is strictly blocked from reading .env files or private keys directly. Sensitive names and company values are deterministically scrubbed. Trade-off: dynamic runtime unmasking depends on agent preserving the __ANON_N__ placeholder intact during edits.

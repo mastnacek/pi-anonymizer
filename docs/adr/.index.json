@@ -1,0 +1,22 @@
+{
+  "version": 1,
+  "lastUpdated": "2026-09-15T19:35:00.000Z",
+  "records": [
+    {
+      "id": "ADR-001",
+      "title": "Security Architectural Patterns & Controls",
+      "date": "2026-09-15 17:11:53",
+      "file": "2026-09-15-ADR-001-security-architectural-patterns-controls.md",
+      "constraint": "Security Architectural Patterns & Controls: AI Tooling Risks: AI coding tools generate internal applications that can accidentally expose sensitive data or run operations using an engineer's existing identity and permissions.",
+      "status": "active"
+    },
+    {
+      "id": "ADR-002",
+      "title": "Bidirectional Pseudonymization with Encrypted Dictionary and Protected Path Isolation",
+      "date": "2026-09-15 21:33:17",
+      "file": "2026-09-15-ADR-002-bidirectional-pseudonymization-with-encrypted-dict.md",
+      "constraint": "Bidirectional Pseudonymization with Encrypted Dictionary and Protected Path Isolation: Eliminated local LLM layer and modal dialogs. Implemented bidirectional pseudonymization using stable reversible tokens (__ANON_N__) that unmask dynamically on tool_call (write, edit, bash). Added dictionary support with AES-256-GCM encrypted payload or plaintext from .env. Enforced strict path isolation blocking AI agent from accessing .env*, *.pem, *.key, and ssh identity files.",
+      "status": "active"
+    }
+  ]
+}
