@@ -369,6 +369,8 @@ export const unmaskText = (text: string): string => vault.unmask(text);
 // --- extension ---------------------------------------------------------------
 
 const refreshStatus = (ctx: ExtensionContext) => {
+	// Status is a UI affordance; never call ctx.ui.* in a headless session.
+	if (!ctx.hasUI) return;
 	if (!features.enabled) {
 		ctx.ui.setStatus("anonymizer", "anon off");
 		return;
@@ -381,6 +383,15 @@ const refreshStatus = (ctx: ExtensionContext) => {
 
 export default function (pi: ExtensionAPI) {
 	const CONFIG_ENTRY_TYPE = "pi-anonymizer-config";
+
+	/** UI-safe notify: no-op when running headless (AGENTS.md §6). */
+	const uiNotify = (
+		ctx: ExtensionContext,
+		message: string,
+		type: "info" | "warning" | "error" = "info",
+	): void => {
+		if (ctx.hasUI) ctx.ui.notify(message, type);
+	};
 
 	const saveState = () => {
 		pi.appendEntry(CONFIG_ENTRY_TYPE, {
@@ -425,7 +436,7 @@ export default function (pi: ExtensionAPI) {
 			const targetPath = String((event.input as { path?: string })?.path ?? "");
 			if (features.block && targetPath && isProtectedPath(targetPath)) {
 				if (features.log) {
-					ctx.ui.notify(
+					uiNotify(ctx, 
 						`[anonymizer] BLOKOVAN pristup k chranenemu souboru: ${targetPath}`,
 						"warning",
 					);
@@ -440,11 +451,11 @@ export default function (pi: ExtensionAPI) {
 		// Kontrola allowlistu pro "read"
 		if (isToolCallEventType("read", event)) {
 			const path = String(event.input.path ?? "");
-			if (features.log) ctx.ui.notify(`[anonymizer] read -> ${path}`, "info");
+			if (features.log) uiNotify(ctx, `[anonymizer] read -> ${path}`, "info");
 
 			if (features.block && !isAllowedPath(path)) {
 				if (features.log) {
-					ctx.ui.notify(`[anonymizer] BLOCKED (mimo allowlist): ${path}`, "warning");
+					uiNotify(ctx, `[anonymizer] BLOCKED (mimo allowlist): ${path}`, "warning");
 				}
 				return {
 					block: true,
@@ -480,7 +491,7 @@ export default function (pi: ExtensionAPI) {
 			const cmd = String(event.input.command ?? "");
 			if (features.block && isBashProtected(cmd)) {
 				if (features.log) {
-					ctx.ui.notify(
+					uiNotify(ctx, 
 						`[anonymizer] BLOKOVAN bash prikaz (pristup k .env/klicum): ${cmd.slice(0, 60)}`,
 						"warning",
 					);
@@ -496,7 +507,7 @@ export default function (pi: ExtensionAPI) {
 				event.input.command = unmaskText(event.input.command);
 			}
 			if (features.log) {
-				ctx.ui.notify(`[anonymizer] bash -> ${cmd.slice(0, 80)}`, "info");
+				uiNotify(ctx, `[anonymizer] bash -> ${cmd.slice(0, 80)}`, "info");
 			}
 		}
 	});
@@ -517,7 +528,7 @@ export default function (pi: ExtensionAPI) {
 
 		if (changed) {
 			if (features.log) {
-				ctx.ui.notify(
+				uiNotify(ctx, 
 					`[anonymizer] obsah z "${event.toolName}" pseudonymizovan (aktivni tokeny: ${vault.size})`,
 					"info",
 				);
@@ -587,7 +598,7 @@ export default function (pi: ExtensionAPI) {
 				features.log = val;
 				features.block = val;
 				features.redact = val;
-				ctx.ui.notify(
+				uiNotify(ctx, 
 					`[anonymizer] plugin ${val ? "ZAPNUT" : "VYPNUT"}`,
 					val ? "info" : "warning",
 				);
@@ -598,7 +609,7 @@ export default function (pi: ExtensionAPI) {
 
 			if (sub === "reload") {
 				const { count, sources } = loadDictionary(ctx.cwd);
-				ctx.ui.notify(
+				uiNotify(ctx, 
 					`[anonymizer] slovnik znovu nacten: ${count} polozek (zdroje: ${sources.join(", ") || "zadne"})`,
 					"info",
 				);
@@ -609,7 +620,7 @@ export default function (pi: ExtensionAPI) {
 			if (sub === "add" && rest.length > 0) {
 				const p = resolve(rest.join(" "));
 				if (!allowedRoots.includes(p)) allowedRoots.push(p);
-				ctx.ui.notify(`[anonymizer] pridan povoleny koren: ${p}`, "info");
+				uiNotify(ctx, `[anonymizer] pridan povoleny koren: ${p}`, "info");
 				refreshStatus(ctx);
 				return;
 			}
@@ -619,14 +630,14 @@ export default function (pi: ExtensionAPI) {
 				const passphrase = rest[0];
 				const plain = rest.slice(1).join(" ");
 				if (!passphrase || !plain) {
-					ctx.ui.notify(
+					uiNotify(ctx, 
 						"Pouziti: /anonymizer encrypt <heslo_pro_desifrovani> <tajne_udaje_oddelene_strednikem>",
 						"warning",
 					);
 					return;
 				}
 				const cipher = encryptSecrets(plain, passphrase);
-				ctx.ui.notify(
+				uiNotify(ctx, 
 					`Zasifrovano! Pridejte do sveho .env:\nPI_ANONYMIZER_KEY="${passphrase}"\nPI_ANONYMIZER_WORDS_ENCRYPTED="${cipher}"`,
 					"info",
 				);
@@ -639,7 +650,7 @@ export default function (pi: ExtensionAPI) {
 				features[key] =
 					val === "on" ? true : val === "off" ? false : !features[key];
 				if (features[key]) features.enabled = true;
-				ctx.ui.notify(
+				uiNotify(ctx, 
 					`[anonymizer] ${key} = ${features[key] ? "ON" : "OFF"}`,
 					"info",
 				);
@@ -649,7 +660,7 @@ export default function (pi: ExtensionAPI) {
 			}
 
 			// help / status
-			ctx.ui.notify(
+			uiNotify(ctx, 
 				[
 					`pi-anonymizer — stav: ${features.enabled ? "ZAPNUTO (ON)" : "VYPNUTO (OFF)"}`,
 					"Obousmerna pseudonymizace (__ANON_N__) hesel, klicu a slovniku ze zasifrovaneho .env. Blokovani pristupu k .env a klicum.",
