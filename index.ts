@@ -383,6 +383,14 @@ const refreshStatus = (ctx: ExtensionContext) => {
 };
 
 export default function (pi: ExtensionAPI) {
+	/** Unsubscribers from every `pi.on()`; drained on session_shutdown (AGENTS §5). */
+	const unsubscribers: Array<() => void> = [];
+
+	/** Retain a `pi.on()` return value; older engine typings declare it void. */
+	const track = (result: unknown): void => {
+		if (typeof result === "function") unsubscribers.push(result as () => void);
+	};
+
 	const CONFIG_ENTRY_TYPE = "pi-anonymizer-config";
 
 	/** UI-safe notify: no-op when running headless (AGENTS.md §6). */
@@ -417,14 +425,14 @@ export default function (pi: ExtensionAPI) {
 		}
 	};
 
-	pi.on("session_start", async (_event, ctx) => {
+	track(pi.on("session_start", async (_event, ctx) => {
 		loadDictionary(ctx.cwd);
 		restoreState(ctx);
 		refreshStatus(ctx);
-	});
+	}));
 
 	// 1. Ochrana souboru a obousmerny de-anonymizer pred spustenim toolu
-	pi.on("tool_call", async (event, ctx) => {
+	track(pi.on("tool_call", async (event, ctx) => {
 		if (!features.enabled) return;
 
 		// Kontrola chranenych souboru (.env, klice) pro nastroje pracujici se soubory
@@ -511,10 +519,10 @@ export default function (pi: ExtensionAPI) {
 				uiNotify(ctx, `[anonymizer] bash -> ${cmd.slice(0, 80)}`, "info");
 			}
 		}
-	});
+	}));
 
 	// 2. Anonymizace vysledku pred odeslanim do kontextu modelu
-	pi.on("tool_result", async (event, ctx) => {
+	track(pi.on("tool_result", async (event, ctx) => {
 		if (!features.enabled || !features.redact) return;
 		if (event.isError) return;
 		if (event.toolName !== "read" && event.toolName !== "bash") return;
@@ -537,7 +545,7 @@ export default function (pi: ExtensionAPI) {
 			refreshStatus(ctx);
 			return { content };
 		}
-	});
+	}));
 
 	// 3. Slash command /anonymizer
 	const TOGGLES = ["log", "block", "redact"];
@@ -693,5 +701,9 @@ export default function (pi: ExtensionAPI) {
 				"info",
 			);
 		},
+	});
+
+	pi.on("session_shutdown", () => {
+		while (unsubscribers.length > 0) unsubscribers.pop()?.();
 	});
 }
