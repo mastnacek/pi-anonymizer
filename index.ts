@@ -21,6 +21,7 @@ import type {
 	ExtensionAPI,
 	ExtensionContext,
 } from "@earendil-works/pi-coding-agent";
+import type { AutocompleteItem } from "@earendil-works/pi-tui";
 import { isToolCallEventType } from "@earendil-works/pi-coding-agent";
 
 // --- krypto & trezor pro slovnik --------------------------------------------
@@ -568,6 +569,7 @@ export default function (pi: ExtensionAPI) {
 			}
 
 			const typed = (tokens[0] ?? "").toLowerCase();
+			const NON_TERMINAL = new Set(["add", "encrypt", ...TOGGLES]);
 			const SUBS: Array<[string, string]> = [
 				["on", "HLAVNI VYPINAC — zapne plugin a vsechny ochrany"],
 				["off", "HLAVNI VYPINAC — vypne cely plugin"],
@@ -583,9 +585,16 @@ export default function (pi: ExtensionAPI) {
 					(t) => [t, TOGGLE_DOCS[t] ?? `prepinac ${t}`] as [string, string],
 				),
 			];
-			const items = SUBS.filter(([s]) => s.toLowerCase().startsWith(typed)).map(
-				([value, description]) => ({ value, label: value, description }),
-			);
+			const items: AutocompleteItem[] = [];
+			for (const [s, description] of SUBS) {
+				if (s.toLowerCase().startsWith(typed)) {
+					items.push({
+						value: NON_TERMINAL.has(s) ? `${s} ` : s,
+						label: s,
+						description,
+					});
+				}
+			}
 			return items.length > 0 ? items : null;
 		},
 		handler: async (args, ctx) => {

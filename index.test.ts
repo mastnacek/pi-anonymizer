@@ -214,7 +214,8 @@ test("slovnik: loadDictionary nacita zasifrovany slovnik z env promennych", () =
 test("regex: chytne AWS, GitHub a Stripe vendor klice", () => {
 	const aws = "aws_key = AKIAIOSFODNN7EXAMPLE";
 	const gh = "github = ghp_123456789012345678901234567890123456";
-	const stripe = "stripe = " + ["sk", "test", "fake0123456789abcdef0123456"].join("_");
+	const stripe =
+		"stripe = " + ["sk", "test", "fake0123456789abcdef0123456"].join("_");
 
 	assert.match(anonymizeText(aws), /AKIAIOSFODNN7EXAMPLE|__ANON_\d+__/);
 	assert.match(anonymizeText(gh), /ghp_|__ANON_\d+__/);
